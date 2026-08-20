@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNTIME_DIR="$ROOT_DIR/var/local"
+LOG_DIR="$RUNTIME_DIR/log"
+PID_DIR="$RUNTIME_DIR/run"
+ENV_FILE="$ROOT_DIR/.env"
+ENV_EXAMPLE="$ROOT_DIR/.env.example"
+OLLAMA_PID_FILE="$PID_DIR/ollama.pid"
+ASR_PID_FILE="$PID_DIR/gigaam.pid"
+OLLAMA_LOG="$LOG_DIR/ollama.log"
+ASR_LOG="$LOG_DIR/gigaam.log"
+
+mkdir -p "$LOG_DIR" "$PID_DIR" "$ROOT_DIR/var/audio"
+
+info() {
+    printf '\033[1;34m[sobes]\033[0m %s\n' "$*"
+}
+
+success() {
+    printf '\033[1;32m[sobes]\033[0m %s\n' "$*"
+}
+
+fail() {
+    printf '\033[1;31m[sobes]\033[0m %s\n' "$*" >&2
+    exit 1
+}
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+http_ok() {
+    curl --silent --fail --max-time 2 "$1" >/dev/null 2>&1
+}
+
+wait_for_url() {
+    local name="$1"
+    local url="$2"
+    local attempts="${3:-60}"
+    local delay="${4:-2}"
+    local attempt=1
+
+    while [ "$attempt" -le "$attempts" ]; do
+        if http_ok "$url"; then
+            return 0
+        fi
+        sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+
+    fail "$name не запустился. Проверьте журналы в $LOG_DIR."
+}
+
+read_env() {
+    local key="$1"
+    local fallback="$2"
+    local line
+    local value
+
+    line="$(grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
+    if [ -z "$line" ]; then
+        printf '%s' "$fallback"
+        return
+    fi
+
+    value="${line#*=}"
+    value="${value#\"}"
+    value="${value%\"}"
+    printf '%s' "$value"
+}
+
+prepare_env() {
+    if [ -f "$ENV_FILE" ]; then
+        return
+    fi
+
+    [ -f "$ENV_EXAMPLE" ] || fail "Не найден $ENV_EXAMPLE."
+    command_exists openssl || fail "Для первого запуска необходим openssl."
+
+    cp "$ENV_EXAMPLE" "$ENV_FILE"
+
+    SOBES_APP_SECRET="$(openssl rand -hex 32)" \
+    SOBES_AI_TOKEN="$(openssl rand -hex 32)" \
+    perl -0pi -e '
+        s/^APP_SECRET=change-me$/APP_SECRET=$ENV{SOBES_APP_SECRET}/m;
+        s/^LOCAL_AI_TOKEN="change-me"$/LOCAL_AI_TOKEN="$ENV{SOBES_AI_TOKEN}"/m;
+    ' "$ENV_FILE"
+
+    success "Создан локальный .env со случайными секретами."
+}
+
+install_host_dependencies() {
+    local missing=""
+    local tool
+
+    for tool in ffmpeg uv ollama; do
+        if ! command_exists "$tool"; then
+            missing="$missing $tool"
+        fi
+    done
+
+    if [ -n "$missing" ]; then
+        command_exists brew || fail "Не найдены:$missing. Установите Homebrew: https://brew.sh"
+        info "Устанавливаю системные зависимости:$missing"
+        # shellcheck disable=SC2086
+        brew install $missing
+    fi
+
+    command_exists docker || fail "Docker не найден. Установите Docker Desktop: https://www.docker.com/products/docker-desktop/"
+    docker compose version >/dev/null 2>&1 || fail "Не найден Docker Compose."
+}
+
+start_docker_desktop() {
+    if docker info >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ "$(uname -s)" = "Darwin" ]; then
+        info "Запускаю Docker Desktop…"
+        open -a Docker >/dev/null 2>&1 || fail "Не удалось открыть Docker Desktop."
+        local attempt=1
+        while [ "$attempt" -le 90 ]; do
+            if docker info >/dev/null 2>&1; then
+                return
+            fi
+            sleep 2
+            attempt=$((attempt + 1))
+        done
+    fi
+
+    fail "Docker Engine недоступен. Запустите Docker Desktop и повторите команду."
+}
+
+pid_is_running() {
+    local pid_file="$1"
+    local pid
+
+    [ -f "$pid_file" ] || return 1
+    pid="$(cat "$pid_file" 2>/dev/null || true)"
+    [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1
+}
+
+start_ollama() {
+    if http_ok "http://127.0.0.1:11434/api/tags"; then
+        success "Ollama уже работает."
+        return
+    fi
+
+    info "Запускаю Ollama…"
+    nohup ollama serve >"$OLLAMA_LOG" 2>&1 &
+    printf '%s\n' "$!" >"$OLLAMA_PID_FILE"
+    wait_for_url "Ollama" "http://127.0.0.1:11434/api/tags" 60 1
+    success "Ollama запущена."
+}
+
+ensure_qwen_model() {
+    local model
+    model="$(read_env OLLAMA_MODEL "qwen3.5:9b-q4_K_M")"
+
+    if ollama list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -Fxq "$model"; then
+        success "Модель $model уже установлена."
+        return
+    fi
+
+    info "Загружаю модель $model. Первый запуск может занять продолжительное время…"
+    ollama pull "$model"
+}
+
+prepare_gigaam() {
+    info "Проверяю Python-окружение GigaAM…"
+    uv sync --project "$ROOT_DIR/local-ai" --frozen
+}
+
+start_gigaam() {
+    local token
+    local model
+
+    if http_ok "http://127.0.0.1:8091/health"; then
+        success "GigaAM уже работает."
+        return
+    fi
+
+    token="$(read_env LOCAL_AI_TOKEN "local-interview-trainer")"
+    model="$(read_env LOCAL_ASR_MODEL "v3_e2e_rnnt")"
+
+    info "Запускаю GigaAM…"
+    (
+        cd "$ROOT_DIR/local-ai"
+        export AUDIO_STORAGE_DIR="$ROOT_DIR/var/audio"
+        export LOCAL_AI_TOKEN="$token"
+        export LOCAL_ASR_MODEL="$model"
+        export GIGAAM_DEVICE="${GIGAAM_DEVICE:-auto}"
+        exec uv run uvicorn app:app --host 0.0.0.0 --port 8091
+    ) >"$ASR_LOG" 2>&1 &
+    printf '%s\n' "$!" >"$ASR_PID_FILE"
+
+    wait_for_url "GigaAM" "http://127.0.0.1:8091/health" 60 1
+    success "GigaAM запущена."
+}
+
+start_application() {
+    info "Собираю и запускаю Docker-сервисы…"
+    (
+        cd "$ROOT_DIR"
+        docker compose up -d --build --remove-orphans
+        # PHP-контейнер может получить новый IP после пересборки. Nginx
+        # перечитывает Docker DNS только при запуске, поэтому обновляем upstream.
+        docker compose restart nginx
+        docker compose exec -T php php bin/console doctrine:migrations:migrate --no-interaction --no-debug
+    )
+
+    wait_for_url "Sobes Trainer" "http://127.0.0.1:8080/health" 60 2
+    success "Sobes Trainer готов: http://localhost:8080"
+    success "Локальный чат: http://localhost:8080/chat"
+}
+
+stop_owned_process() {
+    local name="$1"
+    local pid_file="$2"
+    local pid
+    local attempt=1
+
+    if ! pid_is_running "$pid_file"; then
+        rm -f "$pid_file"
+        return
+    fi
+
+    pid="$(cat "$pid_file")"
+    info "Останавливаю $name (PID $pid)…"
+    kill "$pid" >/dev/null 2>&1 || true
+
+    while [ "$attempt" -le 20 ]; do
+        if ! kill -0 "$pid" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.25
+        attempt=$((attempt + 1))
+    done
+
+    rm -f "$pid_file"
+}
+
+start_all() {
+    prepare_env
+    install_host_dependencies
+    start_docker_desktop
+    start_ollama
+    ensure_qwen_model
+    prepare_gigaam
+    start_gigaam
+    start_application
+    printf '\n'
+    show_status
+}
+
+stop_all() {
+    if command_exists docker && docker info >/dev/null 2>&1; then
+        info "Останавливаю Docker-сервисы…"
+        (cd "$ROOT_DIR" && docker compose down --remove-orphans)
+    fi
+
+    stop_owned_process "GigaAM" "$ASR_PID_FILE"
+    stop_owned_process "Ollama" "$OLLAMA_PID_FILE"
+    success "Сервисы, запущенные этим проектом, остановлены."
+}
+
+service_status() {
+    local name="$1"
+    local url="$2"
+
+    if http_ok "$url"; then
+        printf '  \033[32m●\033[0m %s\n' "$name"
+    else
+        printf '  \033[31m●\033[0m %s\n' "$name"
+    fi
+}
+
+show_status() {
+    printf 'Состояние сервисов:\n'
+    service_status "Приложение     http://localhost:8080" "http://127.0.0.1:8080/health"
+    service_status "GigaAM         http://localhost:8091" "http://127.0.0.1:8091/health"
+    service_status "Ollama         http://localhost:11434" "http://127.0.0.1:11434/api/tags"
+}
+
+show_logs() {
+    printf 'Журнал Ollama: %s\n' "$OLLAMA_LOG"
+    printf 'Журнал GigaAM: %s\n\n' "$ASR_LOG"
+    tail -n 30 "$OLLAMA_LOG" "$ASR_LOG" 2>/dev/null || true
+    printf '\nЖурналы Docker (Ctrl+C для выхода):\n'
+    (cd "$ROOT_DIR" && docker compose logs -f --tail=100)
+}
+
+show_help() {
+    cat <<'HELP'
+Sobes Trainer — локальное управление
+
+Использование:
+  ./bin/sobes [start|stop|restart|status|logs|help]
+
+Команды:
+  start     подготовить зависимости и запустить всё необходимое (по умолчанию)
+  stop      остановить Docker и только те AI-процессы, которые запустил скрипт
+  restart   перезапустить локальный стек
+  status    показать доступность приложения, GigaAM и Ollama
+  logs      показать журналы AI-сервисов и следить за Docker
+  help      показать эту справку
+HELP
+}
+
+case "${1:-start}" in
+    start)
+        start_all
+        ;;
+    stop)
+        stop_all
+        ;;
+    restart)
+        stop_all
+        start_all
+        ;;
+    status)
+        show_status
+        ;;
+    logs)
+        show_logs
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        show_help
+        fail "Неизвестная команда: $1"
+        ;;
+esac

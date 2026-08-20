@@ -6,6 +6,20 @@ A local AI trainer for technical interviews. Sobes Trainer records audio only, t
 
 The project is designed primarily for personal use on Apple Silicon Macs. Recordings, transcripts, and answers are not sent to external paid APIs.
 
+## Interface
+
+### Question catalog
+
+![Sobes Trainer question catalog](docs/screenshots/home.jpg)
+
+### Results and audio player
+
+![Training result with waveform and question timestamps](docs/screenshots/result-player.jpg)
+
+### Local Qwen chat with voice input
+
+![Sobes Trainer local chat powered by Qwen and GigaAM](docs/screenshots/qwen-chat.jpg)
+
 ## Why Sobes Trainer
 
 - **Private by default.** Audio, transcripts, and evaluations stay on the user's computer.
@@ -53,30 +67,35 @@ The project has been tested on a MacBook Air M4 with 24 GB of memory. GigaAM can
 
 ## Quick start
 
-Install system dependencies and download the models:
+Clone the repository and run one command:
 
-```bash
-brew install ffmpeg uv ollama
-make ai-install
-make ai-pull
-```
+~~~bash
+git clone https://github.com/albert-mukhametshin/sobes-trainer.git
+cd sobes-trainer
+./bin/sobes
+~~~
 
-Start Ollama and GigaAM in separate terminal windows:
+The script will:
 
-```bash
-make ai-ollama
-```
+- check Homebrew and Docker Desktop;
+- install missing **ffmpeg**, **uv**, and **ollama** tools;
+- create a local **.env** with random secrets;
+- prepare the GigaAM Python environment and download Qwen;
+- start Ollama, GigaAM, and the Docker services;
+- apply database migrations and verify application health.
 
-```bash
-make ai-asr
-```
+Running it again is safe: active services and downloaded models are reused.
 
-Start the application and apply database migrations:
+Manage the local stack with:
 
-```bash
-make up
-make db-migrate
-```
+~~~bash
+./bin/sobes status
+./bin/sobes logs
+./bin/sobes restart
+./bin/sobes stop
+~~~
+
+The main commands are also available as **make start**, **make status**, and **make stop**.
 
 Available endpoints:
 
@@ -86,6 +105,8 @@ Available endpoints:
 - health check: [http://localhost:8080/health](http://localhost:8080/health).
 
 The first transcription downloads GigaAM weights into the user cache and therefore takes longer than subsequent runs.
+
+For manual component-level control, the existing **make ai-ollama**, **make ai-asr**, **make up**, and **make db-migrate** targets remain available.
 
 ## Analysis pipeline
 

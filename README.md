@@ -6,6 +6,20 @@
 
 Проект рассчитан прежде всего на самостоятельное использование на Mac с Apple Silicon. Он не отправляет записи, расшифровки или ответы во внешние платные API.
 
+## Интерфейс
+
+### База вопросов
+
+![База вопросов Sobes Trainer](docs/screenshots/home.jpg)
+
+### Результат и аудиоплеер
+
+![Результат тренировки с волновой формой и таймкодами](docs/screenshots/result-player.jpg)
+
+### Локальный чат с Qwen и голосовым вводом
+
+![Локальный чат Sobes Trainer с Qwen и GigaAM](docs/screenshots/qwen-chat.jpg)
+
 ## Почему Sobes Trainer
 
 - **Приватность по умолчанию.** Аудио, расшифровки и оценки остаются на компьютере пользователя.
@@ -53,30 +67,35 @@
 
 ## Быстрый запуск
 
-Установите системные зависимости и модели:
+Клонируйте репозиторий и выполните одну команду:
 
-```bash
-brew install ffmpeg uv ollama
-make ai-install
-make ai-pull
-```
+~~~bash
+git clone https://github.com/albert-mukhametshin/sobes-trainer.git
+cd sobes-trainer
+./bin/sobes
+~~~
 
-Запустите Ollama и GigaAM в отдельных терминалах:
+Скрипт:
 
-```bash
-make ai-ollama
-```
+- проверит Homebrew и Docker Desktop;
+- установит отсутствующие **ffmpeg**, **uv** и **ollama**;
+- создаст локальный **.env** со случайными секретами;
+- подготовит Python-окружение GigaAM и загрузит Qwen;
+- запустит Ollama, GigaAM и Docker-сервисы;
+- применит миграции и проверит доступность приложения.
 
-```bash
-make ai-asr
-```
+Повторный запуск безопасен: уже работающие сервисы и загруженные модели переиспользуются.
 
-Запустите приложение и примените миграции:
+Управление локальным стеком:
 
-```bash
-make up
-make db-migrate
-```
+~~~bash
+./bin/sobes status
+./bin/sobes logs
+./bin/sobes restart
+./bin/sobes stop
+~~~
+
+Те же основные команды доступны как **make start**, **make status** и **make stop**.
 
 После запуска доступны:
 
@@ -86,6 +105,8 @@ make db-migrate
 - проверка состояния: [http://localhost:8080/health](http://localhost:8080/health).
 
 Первое распознавание загружает веса GigaAM в пользовательский кеш и поэтому выполняется дольше обычного.
+
+Для ручного запуска отдельных компонентов по-прежнему доступны цели **make ai-ollama**, **make ai-asr**, **make up** и **make db-migrate**.
 
 ## Как работает анализ
 

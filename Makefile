@@ -1,4 +1,13 @@
-.PHONY: build up down logs shell install test lint db-create db-migrate ai-install ai-pull ai-asr ai-ollama
+.PHONY: start stop status build up down logs shell install test lint db-create db-migrate ai-install ai-pull ai-asr ai-ollama
+
+start:
+	./bin/sobes start
+
+stop:
+	./bin/sobes stop
+
+status:
+	./bin/sobes status
 
 build:
 	docker compose build
