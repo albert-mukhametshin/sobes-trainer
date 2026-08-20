@@ -1,0 +1,119 @@
+name: question-training
+
+services:
+  php:
+    image: question-training-php:latest
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: development
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_SECRET: ${APP_SECRET:-docker-development-secret}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@database:5432/${POSTGRES_DB:-app}?serverVersion=17&charset=utf8
+      REDIS_URL: redis://redis:6379
+      MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+      MAILER_DSN: smtp://mailpit:1025
+      XDEBUG_MODE: ${XDEBUG_MODE:-off}
+      XDEBUG_CONFIG: client_host=host.docker.internal
+      LOCAL_ASR_BASE_URL: ${LOCAL_ASR_BASE_URL:-http://host.docker.internal:8091}
+      LOCAL_AI_TOKEN: ${LOCAL_AI_TOKEN:-local-interview-trainer}
+      LOCAL_ASR_MODEL: ${LOCAL_ASR_MODEL:-v3_e2e_rnnt}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b-q4_K_M}
+    volumes:
+      - ./:/var/www/app
+      - composer_cache:/tmp/composer-cache
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(extension_loaded(\"pdo_pgsql\") ? 0 : 1);'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    init: true
+
+  worker:
+    image: question-training-php:latest
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: development
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    command: php bin/console messenger:consume async --time-limit=3600 --memory-limit=256M -vv
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_SECRET: ${APP_SECRET:-docker-development-secret}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@database:5432/${POSTGRES_DB:-app}?serverVersion=17&charset=utf8
+      REDIS_URL: redis://redis:6379
+      MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+      LOCAL_ASR_BASE_URL: ${LOCAL_ASR_BASE_URL:-http://host.docker.internal:8091}
+      LOCAL_AI_TOKEN: ${LOCAL_AI_TOKEN:-local-interview-trainer}
+      LOCAL_ASR_MODEL: ${LOCAL_ASR_MODEL:-v3_e2e_rnnt}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b-q4_K_M}
+      XDEBUG_MODE: ${XDEBUG_MODE:-off}
+    volumes:
+      - ./:/var/www/app
+      - composer_cache:/tmp/composer-cache
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    init: true
+
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./:/var/www/app:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      php:
+        condition: service_healthy
+
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+
+volumes:
+  composer_cache:
+  postgres_data:
+  redis_data:

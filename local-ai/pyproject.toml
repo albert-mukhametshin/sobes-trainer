@@ -1,0 +1,19 @@
+[project]
+name = "interview-trainer-local-asr"
+version = "0.1.0"
+description = "Local Russian speech recognition service for Interview Trainer"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "fastapi==0.116.1",
+    "numpy==2.2.6",
+    "soundfile==0.13.1",
+    "uvicorn[standard]==0.35.0",
+    "gigaam[torch] @ git+https://github.com/salute-developers/GigaAM.git@7447938d791c4f3e643386ee22c33777004293a5",
+]
+
+[dependency-groups]
+dev = ["pytest==8.4.1", "httpx==0.28.1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

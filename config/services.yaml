@@ -1,0 +1,35 @@
+parameters:
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  App\:
+    resource: '../src/'
+    exclude:
+      - '../src/Kernel.php'
+      - '../src/Entity/'
+
+  App\Service\AudioStorage:
+    arguments:
+      $storageDirectory: '%kernel.project_dir%/var/audio'
+
+  App\Service\LocalAi\GigaAmAsrProvider:
+    arguments:
+      $baseUrl: '%env(LOCAL_ASR_BASE_URL)%'
+      $apiToken: '%env(LOCAL_AI_TOKEN)%'
+      $model: '%env(LOCAL_ASR_MODEL)%'
+
+  App\Service\LocalAi\OllamaAnswerEvaluator:
+    arguments:
+      $model: '%env(OLLAMA_MODEL)%'
+
+  App\Service\LocalAi\OllamaStreamClient:
+    arguments:
+      $baseUrl: '%env(OLLAMA_BASE_URL)%'
+      $model: '%env(OLLAMA_MODEL)%'
+
+  App\Service\LocalAi\AsrProviderInterface: '@App\Service\LocalAi\GigaAmAsrProvider'
+  App\Service\LocalAi\VoiceTranscriberInterface: '@App\Service\LocalAi\GigaAmAsrProvider'
+  App\Service\LocalAi\AnswerEvaluatorInterface: '@App\Service\LocalAi\OllamaAnswerEvaluator'

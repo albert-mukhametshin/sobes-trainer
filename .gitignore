@@ -1,0 +1,30 @@
+/.env
+/.env.dev
+/.env.local
+/.DS_Store
+/.env.*.local
+/.phpunit.cache/
+/var/
+/vendor/
+/local-ai/.venv/
+/local-ai/.pytest_cache/
+/local-ai/__pycache__/
+/local-ai/providers/__pycache__/
+/GUI/build/
+/GUI/.openai/hosting.json
+
+
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
+
+###> phpunit/phpunit ###
+/phpunit.xml
+/.phpunit.cache/
+###< phpunit/phpunit ###

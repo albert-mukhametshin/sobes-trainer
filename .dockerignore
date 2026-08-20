@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+.env
+.env.dev
+.env.local
+.phpunit.cache
+var/
+vendor/
+GUI/build/
+local-ai/.venv/

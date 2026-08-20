@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1ed">
+  <title>Чат с Qwen — тренер собеседований</title>
+  <meta name="description" content="Локальный технический чат с Qwen и голосовым вводом через GigaAM.">
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/chat.css">
+  <link rel="stylesheet" href="/assets/chat-layout.css">
+  <script defer src="/assets/chat.js"></script>
+</head>
+<body>
+  <div class="chat-page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="На главную"><span class="brand-mark"><i></i></span>Готово<span>.</span></a>
+      <nav aria-label="Основная навигация"><a href="/">База вопросов</a><a href="/">Мои тренировки</a><a class="active" href="/chat" aria-current="page">Чат с Qwen</a></nav>
+      <div class="top-actions"><button id="new-chat" class="secondary" type="button">Новый диалог</button><span class="avatar" aria-hidden="true">AI</span></div>
+    </header>
+    <main class="chat-layout">
+      <aside class="chat-aside">
+        <p class="breadcrumb">Локальный AI</p><h1>Спросите Qwen</h1>
+        <p>Обсуждайте технические вопросы текстом или надиктуйте сообщение. Аудио обрабатывается локально и удаляется сразу после расшифровки.</p>
+        <dl><div><dt>Модель ответа</dt><dd>Qwen3.5-9B Q4</dd></div><div><dt>Распознавание</dt><dd>GigaAM-v3</dd></div><div><dt>Передача данных</dt><dd>Только локально</dd></div></dl>
+      </aside>
+      <section class="chat-panel" aria-label="Диалог с Qwen">
+        <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions">
+          <article class="chat-message assistant"><span class="message-avatar">Q</span><div><small>Qwen · локально</small><p>Здравствуйте! Я помогу разобрать технический вопрос, подготовить ответ для собеседования или объяснить сложную тему.</p></div></article>
+        </div>
+        <div id="chat-status" class="chat-status" role="status" aria-live="polite"></div>
+        <form id="chat-form" class="chat-composer">
+          <label for="chat-input">Сообщение</label>
+          <textarea id="chat-input" maxlength="8000" rows="3" placeholder="Например: объясни жизненный цикл запроса в Symfony" required></textarea>
+          <div class="composer-actions"><button id="voice-button" class="voice-button" type="button" aria-pressed="false"><span>●</span> Голосовой ввод</button><span id="voice-time" class="voice-time" hidden>00:00</span><button id="send-button" class="primary" type="submit">Отправить →</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
